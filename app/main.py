@@ -20,3 +20,7 @@ app.include_router(subscription.router)
 app.include_router(customers.router)
 app.include_router(debts.router)
 app.include_router(dashboard.router)
+
+@app.get("/")
+def root():
+    return {"message": "Debt App API Running"}
