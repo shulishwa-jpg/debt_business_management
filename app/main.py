@@ -24,3 +24,9 @@ app.include_router(dashboard.router)
 @app.get("/")
 def root():
     return {"message": "Debt App API Running"}
+
+
+# Health check endpoint for Railway
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}
