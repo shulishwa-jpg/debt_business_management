@@ -7,6 +7,10 @@ load_dotenv(dotenv_path=".env")
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
+# Fix Railway / Postgres URL
+if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg2://", 1)
+
 engine = create_engine(
     DATABASE_URL,
     pool_size=20,
@@ -21,7 +25,7 @@ SessionLocal = sessionmaker(
 
 Base = declarative_base()
 
-# Dependency
+
 def get_db():
     db = SessionLocal()
     try:
