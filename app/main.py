@@ -1,9 +1,14 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+from app.database import engine
+from app import models
+
 from app.routers import auth, subscription, customers, debts, dashboard, mpesa
 
 app = FastAPI()
 
+# create database tables
 models.Base.metadata.create_all(bind=engine)
 
 # ✅ ADD CORS FIRST
@@ -22,4 +27,3 @@ app.include_router(subscription.router)
 app.include_router(customers.router)
 app.include_router(debts.router)
 app.include_router(dashboard.router)
-
