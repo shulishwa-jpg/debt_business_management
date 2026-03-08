@@ -20,7 +20,7 @@ def stk_push_route(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    callback_url = "https://testily-complemented-berry.ngrok-free.dev/mpesa/callback"
+    callback_url = "https://relextechltd-production.up.railway.app/mpesa/callback"
 
     return send_stk_push(
         phone=data.phone,
