@@ -4,6 +4,8 @@ from app.routers import auth, subscription, customers, debts, dashboard, mpesa
 
 app = FastAPI()
 
+models.Base.metadata.create_all(bind=engine)
+
 # ✅ ADD CORS FIRST
 app.add_middleware(
     CORSMiddleware,
@@ -21,12 +23,3 @@ app.include_router(customers.router)
 app.include_router(debts.router)
 app.include_router(dashboard.router)
 
-@app.get("/")
-def root():
-    return {"message": "Debt App API Running"}
-
-
-# Health check endpoint for Railway
-@app.get("/health")
-def health_check():
-    return {"status": "ok"}
