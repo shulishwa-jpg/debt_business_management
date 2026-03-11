@@ -8,7 +8,43 @@ from app.schemas import SubscriptionCreate, SubscriptionResponse
 router = APIRouter(prefix="/subscription", tags=["Subscription"])
 
 
-# CREATE SUBSCRIPTION
+# START 3 DAY FREE TRIAL
+@router.post("/start-trial/{user_id}")
+def start_trial(user_id: int, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.id == user_id).first()
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Check if user already has active subscription
+    existing = db.query(Subscription).filter(
+        Subscription.user_id == user_id,
+        Subscription.status == "active"
+    ).first()
+
+    if existing:
+        raise HTTPException(status_code=400, detail="User already has active subscription")
+
+    trial_end = datetime.utcnow() + timedelta(days=3)
+
+    trial = Subscription(
+        user_id=user_id,
+        plan_name="Free Trial",
+        end_date=trial_end,
+        status="active"
+    )
+
+    db.add(trial)
+    db.commit()
+    db.refresh(trial)
+
+    return {
+        "message": "3 day trial started",
+        "end_date": trial_end
+    }
+
+
+# CREATE PAID SUBSCRIPTION
 @router.post("/create", response_model=SubscriptionResponse)
 def create_subscription(data: SubscriptionCreate, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.id == data.user_id).first()
@@ -62,3 +98,4 @@ def check_subscription(user_id: int, db: Session = Depends(get_db)):
         "end_date": subscription.end_date,
         "status": subscription.status
     }
+    
