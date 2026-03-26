@@ -128,3 +128,13 @@ class PaymentCreate(BaseModel):
     amount: float
     receipt_number: str
     payment_date: Optional[datetime] = None  # Optional, defaults to now in backend
+
+
+from pydantic import BaseModel
+
+class ResetPasswordRequest(BaseModel):
+    phone: str
+    business_name: str
+    new_password: str
+    confirm_password: str
+
