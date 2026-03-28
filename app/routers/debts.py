@@ -122,29 +122,54 @@ def add_debt(
 # POST /debts/{debt_id}/payments
 # ======================================================
 
-@router.post("/debts/{debt_id}/payments")
+@router.post("/{debt_id}/payments")
 def add_payment(
     debt_id: int,
     data: PaymentCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
-    # Check if debt exists
+    # ==========================
+    # CHECK DEBT EXISTS
+    # ==========================
     debt = db.query(Debt).filter(
         Debt.id == debt_id,
         Debt.user_id == current_user.id,
         Debt.is_active == True
     ).first()
+
     if not debt:
         raise HTTPException(status_code=404, detail="Debt not found")
 
-    # Ensure amount > 0 and <= remaining
-    total_paid = sum(p.amount for p in debt.payments)  # relationship payments must exist
+    # ==========================
+    # VALIDATE AMOUNT
+    # ==========================
+    total_paid = sum(p.amount for p in debt.payments)
     remaining = debt.amount - total_paid
-    if data.amount <= 0 or data.amount > remaining:
-        raise HTTPException(status_code=400, detail=f"Amount must be >0 and <= {remaining}")
 
-    # Create payment
+    if data.amount <= 0 or data.amount > remaining:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Amount must be > 0 and <= {remaining}"
+        )
+
+    # ==========================
+    # CHECK DUPLICATE RECEIPT
+    # ==========================
+    existing_payment = db.query(Payment).filter(
+        Payment.receipt_number == data.receipt_number,
+        Payment.user_id == current_user.id
+    ).first()
+
+    if existing_payment:
+        raise HTTPException(
+            status_code=400,
+            detail="Receipt number already exists"
+        )
+
+    # ==========================
+    # CREATE PAYMENT
+    # ==========================
     payment = Payment(
         debt_id=debt.id,
         user_id=current_user.id,
@@ -153,10 +178,22 @@ def add_payment(
         payment_date=data.payment_date or datetime.utcnow(),
         created_at=datetime.utcnow()
     )
-    db.add(payment)
-    db.commit()
-    db.refresh(payment)
 
+    try:
+        db.add(payment)
+        db.commit()
+        db.refresh(payment)
+
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail="Receipt number already exists"
+        )
+
+    # ==========================
+    # RETURN RESPONSE
+    # ==========================
     return {
         "message": "Payment added successfully",
         "payment": {
