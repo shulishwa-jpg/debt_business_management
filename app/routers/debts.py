@@ -122,7 +122,7 @@ def add_debt(
 # POST /debts/{debt_id}/payments
 # ======================================================
 
-@router.post("/{debt_id}/payments")
+@router.post("/debts/{debt_id}/payments")
 def add_payment(
     debt_id: int,
     data: PaymentCreate,
