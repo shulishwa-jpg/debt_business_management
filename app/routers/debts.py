@@ -212,6 +212,95 @@ def add_payment(
 # PUT /debts/{debt_id}
 # ======================================================
 
+@router.get("/notifications")
+def get_notifications(db: Session = Depends(get_db),
+                      current_user: User = Depends(get_current_active_user)):
+
+    today = datetime.utcnow().date()
+    notifications = []
+
+    # ======================
+    # 1. DUE DATES
+    # ======================
+    debts = db.query(Debt).filter(
+        Debt.user_id == current_user.id,
+        Debt.is_active == True
+    ).all()
+
+    for debt in debts:
+        due = debt.due_date.date()
+        diff = (due - today).days
+
+        if diff == 1:
+            notifications.append({
+                "type": "due",
+                "message": f"{debt.customer.name} debt of KSh {debt.amount} due tomorrow"
+            })
+        elif diff == 0:
+            notifications.append({
+                "type": "due",
+                "message": f"{debt.customer.name} debt of KSh {debt.amount} is due today"
+            })
+        elif diff < 0:
+            notifications.append({
+                "type": "overdue",
+                "message": f"{debt.customer.name} debt of KSh {debt.amount} was due on {due}"
+            })
+
+    # ======================
+    # 2. PAYMENTS TODAY
+    # ======================
+    payments = db.query(Payment).filter(
+        func.date(Payment.created_at) == today
+    ).all()
+
+    for p in payments:
+        notifications.append({
+            "type": "payment",
+            "message": f"{p.debt.customer.name} paid KSh {p.amount} today"
+        })
+
+    # ======================
+    # 3. DEBTS TODAY
+    # ======================
+    debts_today = db.query(Debt).filter(
+        func.date(Debt.created_at) == today
+    ).count()
+
+    if debts_today > 0:
+        notifications.append({
+            "type": "debt",
+            "message": f"{debts_today} debts added today"
+        })
+
+    # ======================
+    # 4. MOST TAKEN ITEM
+    # ======================
+    top_item = db.query(
+        Debt.description,
+        func.count(Debt.id).label("count")
+    ).filter(
+        func.date(Debt.created_at) == today
+    ).group_by(Debt.description).order_by(
+        func.count(Debt.id).desc()
+    ).first()
+
+    if top_item:
+        notifications.append({
+            "type": "insight",
+            "message": f"{top_item.description} most taken on credit today"
+        })
+
+    return notifications
+    
+    if not notifications:
+        notifications.append({
+            "type": "info",
+            "message": "Thank you for choosing our service"
+        })
+
+    return notifications
+
 @router.put("/debts/{debt_id}")
 def update_debt(
     debt_id: int,
