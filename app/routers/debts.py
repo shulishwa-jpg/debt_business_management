@@ -7,6 +7,7 @@ from app.database import get_db
 from app.models import Debt, Customer, User, Payment
 from app.security import get_current_active_user
 from app.schemas import DebtCreate, PaymentCreate
+from sqlalchemy.exc import IntegrityError
 
 router = APIRouter(tags=["Debts"])
 
