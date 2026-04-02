@@ -8,6 +8,9 @@ from app.models import Debt, Customer, User, Payment
 from app.security import get_current_active_user
 from app.schemas import DebtCreate, PaymentCreate
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session, joinedload
+
+
 
 router = APIRouter(tags=["Debts"])
 
@@ -17,12 +20,15 @@ router = APIRouter(tags=["Debts"])
 # GET /customers/{customer_id}/debts
 # ======================================================
 
+
+
 @router.get("/customers/{customer_id}/debts")
 def get_customer_debts(
     customer_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
+    # ✅ 1. Validate customer
     customer = db.query(Customer).filter(
         Customer.id == customer_id,
         Customer.user_id == current_user.id,
@@ -32,26 +38,21 @@ def get_customer_debts(
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
 
-    debts = db.query(Debt).filter(
+    # ✅ 2. Fetch debts WITH payments in one query
+    debts = db.query(Debt).options(
+        joinedload(Debt.payments)
+    ).filter(
         Debt.customer_id == customer_id,
         Debt.user_id == current_user.id,
         Debt.is_active == True
     ).all()
 
+    # ✅ 3. Build response (NO extra DB queries)
     results = []
 
     for debt in debts:
-        total_paid = db.query(
-            func.coalesce(func.sum(Payment.amount), 0)
-        ).filter(
-            Payment.debt_id == debt.id
-        ).scalar()
-
+        total_paid = sum(p.amount for p in debt.payments)
         remaining = debt.amount - total_paid
-
-        payments = db.query(Payment).filter(
-            Payment.debt_id == debt.id
-        ).all()
 
         payment_list = [
             {
@@ -60,7 +61,7 @@ def get_customer_debts(
                 "receipt_number": p.receipt_number,
                 "payment_date": p.created_at
             }
-            for p in payments
+            for p in debt.payments
         ]
 
         results.append({
@@ -75,7 +76,6 @@ def get_customer_debts(
         })
 
     return results
-
 
 # ======================================================
 # ADD DEBT TO CUSTOMER
