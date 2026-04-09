@@ -56,8 +56,7 @@ class SubscriptionCreate(BaseModel):
 
 
 class SubscriptionResponse(BaseModel):
-    id: int
-    user_id: int
+    uuid: str
     plan_name: str
     start_date: datetime
     end_date: datetime
@@ -67,6 +66,7 @@ class SubscriptionResponse(BaseModel):
         from_attributes = True
 
 class CustomerCreate(BaseModel):
+    uuid: str  # 🔥 ADD THIS
     name: str
     phone: str | None = None
     address: str | None = None
@@ -78,9 +78,10 @@ class CustomerUpdate(BaseModel):
     address: str | None = None
 
 
+from uuid import UUID
+
 class CustomerResponse(BaseModel):
-    id: int
-    user_id: int
+    uuid: UUID  # ✅ instead of str
     name: str
     phone: str | None
     address: str | None
@@ -89,16 +90,24 @@ class CustomerResponse(BaseModel):
         from_attributes = True
 
 
+class PaymentResponse(BaseModel):
+    uuid: str
+    amount: float
+    receipt_number: str
+    payment_date: datetime
+
+    class Config:
+        from_attributes = True
+
 
 class DebtResponse(BaseModel):
-    id: int
-    customer_id: int
+    uuid: str
     description: str | None
     amount: float
     paid: float
     remaining: float
-    taken_date: date | None
-    due_date: date
+    taken_date: datetime | None
+    due_date: datetime
 
     class Config:
         from_attributes = True
@@ -111,11 +120,11 @@ from datetime import date
 from datetime import datetime
 
 class DebtCreate(BaseModel):
+    uuid: str  # 🔥 ADD THIS
     item: str
     amount: float
     taken_date: datetime | None = None
     due_date: datetime
-
 
 # =========================
 # PAYMENT SCHEMAS
@@ -125,9 +134,10 @@ from typing import Optional
 from datetime import datetime
 
 class PaymentCreate(BaseModel):
+    uuid: str  # 🔥 ADD THIS
     amount: float
     receipt_number: str
-    payment_date: Optional[datetime] = None  # Optional, defaults to now in backend
+    payment_date: Optional[datetime] = None
 
 
 from pydantic import BaseModel
@@ -138,3 +148,11 @@ class ResetPasswordRequest(BaseModel):
     new_password: str
     confirm_password: str
 
+
+class AuthResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str
+    uuid: str
+    phone: str
+    business_name: str        

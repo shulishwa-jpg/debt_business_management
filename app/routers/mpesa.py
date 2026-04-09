@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
+
 from app.database import get_db
 from app.models import Subscription, User, Payment
 from app.security import get_current_user
@@ -10,10 +11,14 @@ router = APIRouter(prefix="/mpesa", tags=["M-Pesa"])
 
 from pydantic import BaseModel
 
+
 class STKPushRequest(BaseModel):
     phone: str
 
 
+# ==========================
+# STK PUSH
+# ==========================
 @router.post("/stk-push")
 def stk_push_route(
     data: STKPushRequest,
@@ -28,6 +33,10 @@ def stk_push_route(
         callback_url=callback_url
     )
 
+
+# ==========================
+# CALLBACK
+# ==========================
 @router.post("/callback")
 async def mpesa_callback(request: Request, db: Session = Depends(get_db)):
     try:
@@ -38,24 +47,29 @@ async def mpesa_callback(request: Request, db: Session = Depends(get_db)):
     try:
         stk = data.get("Body", {}).get("stkCallback", {})
         result_code = stk.get("ResultCode")
+
         if result_code != 0:
             return {"ResultCode": 0, "ResultDesc": "Payment not successful"}
 
         metadata = stk.get("CallbackMetadata", {}).get("Item", [])
+
         phone = None
         amount = None
         receipt = None
+
         for item in metadata:
-            if item.get("Name") == "PhoneNumber":
+            name = item.get("Name")
+            if name == "PhoneNumber":
                 phone = str(item.get("Value"))
-            elif item.get("Name") == "Amount":
+            elif name == "Amount":
                 amount = float(item.get("Value"))
-            elif item.get("Name") == "MpesaReceiptNumber":
+            elif name == "MpesaReceiptNumber":
                 receipt = item.get("Value")
 
         if not phone or not receipt or amount is None:
             return {"ResultCode": 0, "ResultDesc": "Missing payment data"}
 
+        # Normalize phone
         if phone.startswith("254"):
             phone = "0" + phone[3:]
 
@@ -63,28 +77,34 @@ async def mpesa_callback(request: Request, db: Session = Depends(get_db)):
         if not user:
             return {"ResultCode": 0, "ResultDesc": "User not found"}
 
+        # Prevent duplicate payments
         existing_payment = db.query(Payment).filter(
             Payment.receipt_number == receipt
         ).first()
+
         if existing_payment:
             return {"ResultCode": 0, "ResultDesc": "Already processed"}
 
         PLAN_PRICE = 1
-        if round(float(amount), 2) != round(float(PLAN_PRICE), 2):
+        if round(amount, 2) != round(float(PLAN_PRICE), 2):
             return {"ResultCode": 0, "ResultDesc": "Invalid amount"}
 
+        # ✅ Create payment (UUID auto)
         payment = Payment(
             user_id=user.id,
             amount=amount,
             receipt_number=receipt,
+            payment_date=datetime.utcnow(),
             created_at=datetime.utcnow()
         )
         db.add(payment)
 
+        # ✅ Handle subscription
         existing_sub = db.query(Subscription).filter(
             Subscription.user_id == user.id,
             Subscription.status == "active"
         ).first()
+
         if existing_sub:
             existing_sub.end_date += timedelta(days=30)
         else:
@@ -98,11 +118,17 @@ async def mpesa_callback(request: Request, db: Session = Depends(get_db)):
             db.add(new_sub)
 
         db.commit()
+
         return {"ResultCode": 0, "ResultDesc": "Processed successfully"}
-    except Exception as e:
+
+    except Exception:
         db.rollback()
         return {"ResultCode": 0, "ResultDesc": "Processing error"}
 
+
+# ==========================
+# SUBSCRIPTION STATUS
+# ==========================
 @router.get("/subscription/status")
 def subscription_status(
     db: Session = Depends(get_db),
@@ -130,5 +156,6 @@ def subscription_status(
 
     return {
         "active": True,
-        "end_date": sub.end_date
+        "end_date": sub.end_date,
+        "subscription_uuid": str(sub.uuid)  # ✅ optional
     }

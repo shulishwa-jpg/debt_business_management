@@ -4,68 +4,35 @@ from datetime import datetime, timedelta
 from app.database import get_db
 from app.models import Subscription, User
 from app.schemas import SubscriptionCreate, SubscriptionResponse
+from app.security import get_current_active_user
 
 router = APIRouter(prefix="/subscription", tags=["Subscription"])
 
 
-# START 3 DAY FREE TRIAL
-@router.post("/start-trial/{user_id}")
-def start_trial(user_id: int, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.id == user_id).first()
 
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    # Check if user already has active subscription
-    existing = db.query(Subscription).filter(
-        Subscription.user_id == user_id,
-        Subscription.status == "active"
-    ).first()
-
-    if existing:
-        raise HTTPException(status_code=400, detail="User already has active subscription")
-
-    trial_end = datetime.utcnow() + timedelta(days=3)
-
-    trial = Subscription(
-        user_id=user_id,
-        plan_name="Free Trial",
-        end_date=trial_end,
-        status="active"
-    )
-
-    db.add(trial)
-    db.commit()
-    db.refresh(trial)
-
-    return {
-        "message": "3 day trial started",
-        "end_date": trial_end
-    }
 
 
 # CREATE PAID SUBSCRIPTION
 @router.post("/create", response_model=SubscriptionResponse)
-def create_subscription(data: SubscriptionCreate, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.id == data.user_id).first()
-
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    # Check existing active subscription
+def create_subscription(
+    data: SubscriptionCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
     existing = db.query(Subscription).filter(
-        Subscription.user_id == data.user_id,
+        Subscription.user_id == current_user.id,
         Subscription.status == "active"
     ).first()
 
     if existing:
-        raise HTTPException(status_code=400, detail="User already has active subscription")
+        raise HTTPException(status_code=400, detail="Already has active subscription")
 
     end_date = datetime.utcnow() + timedelta(days=data.duration_days)
 
     subscription = Subscription(
-        user_id=data.user_id,
+        user_id=current_user.id,
         plan_name=data.plan_name,
+        start_date=datetime.utcnow(),
         end_date=end_date,
         status="active"
     )
@@ -77,25 +44,38 @@ def create_subscription(data: SubscriptionCreate, db: Session = Depends(get_db))
     return subscription
 
 
-# CHECK SUBSCRIPTION STATUS
-@router.get("/status/{user_id}")
-def check_subscription(user_id: int, db: Session = Depends(get_db)):
+@router.get("/status")
+def check_subscription(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
     subscription = db.query(Subscription).filter(
-        Subscription.user_id == user_id
+        Subscription.user_id == current_user.id
     ).order_by(Subscription.id.desc()).first()
 
     if not subscription:
-        return {"status": "no subscription"}
+        return {
+            "active": False,
+            "end_date": None
+        }
 
-    # Auto expire
-    if subscription.end_date < datetime.utcnow():
+    now = datetime.utcnow()
+
+    # 🔥 CHECK EXPIRY
+    is_active = (
+        subscription.status == "active"
+        and subscription.end_date is not None
+        and subscription.end_date > now
+    )
+
+    # update status if expired
+    if subscription.end_date and subscription.end_date <= now:
         subscription.status = "expired"
         db.commit()
 
     return {
-        "plan_name": subscription.plan_name,
-        "start_date": subscription.start_date,
+        "active": is_active,
         "end_date": subscription.end_date,
-        "status": subscription.status
+        "plan_name": subscription.plan_name,
+        "uuid": str(subscription.uuid)
     }
-    

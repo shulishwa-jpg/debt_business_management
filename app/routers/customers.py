@@ -1,27 +1,29 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from app.database import get_db
-from app.models import Customer, User
-from app.schemas import CustomerCreate, CustomerUpdate, CustomerResponse
-from app.security import get_current_user, get_current_active_user
+from sqlalchemy import func
 
+from app.database import get_db
+from app.models import Customer, User, Debt
+from app.schemas import CustomerCreate, CustomerUpdate, CustomerResponse
+from app.security import get_current_active_user
 
 router = APIRouter(prefix="/customers", tags=["Customers"])
 
 
-# CREATE CUSTOMER
+# ✅ CREATE CUSTOMER
 @router.post("/", response_model=CustomerResponse)
 def create_customer(
     data: CustomerCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
-
 ):
     customer = Customer(
+        uuid=data.uuid,
         user_id=current_user.id,
         name=data.name,
         phone=data.phone,
         address=data.address,
+        # uuid auto-generated
     )
 
     db.add(customer)
@@ -31,12 +33,11 @@ def create_customer(
     return customer
 
 
-# GET ALL CUSTOMERS (ACTIVE ONLY)
+# ✅ GET ALL CUSTOMERS (ACTIVE ONLY)
 @router.get("/", response_model=list[CustomerResponse])
 def get_customers(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
-
 ):
     return (
         db.query(Customer)
@@ -44,23 +45,23 @@ def get_customers(
             Customer.user_id == current_user.id,
             Customer.is_active == True,
         )
+        .order_by(Customer.created_at.desc())  # optional improvement
         .all()
     )
 
 
-# UPDATE CUSTOMER
-@router.put("/{customer_id}", response_model=CustomerResponse)
+# ✅ UPDATE CUSTOMER (UUID)
+@router.put("/{customer_uuid}", response_model=CustomerResponse)
 def update_customer(
-    customer_id: int,
+    customer_uuid: str,
     data: CustomerUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
-
 ):
     customer = (
         db.query(Customer)
         .filter(
-            Customer.id == customer_id,
+            Customer.uuid == customer_uuid,
             Customer.user_id == current_user.id,
             Customer.is_active == True,
         )
@@ -82,44 +83,38 @@ def update_customer(
 
     return customer
 
-from app.models import Customer, User, Debt
-from sqlalchemy import func
 
-
-@router.delete("/{customer_id}")
+# ✅ DELETE CUSTOMER (UUID)
+@router.delete("/{customer_uuid}")
 def delete_customer(
-    customer_id: int,
+    customer_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
     customer = db.query(Customer).filter(
-        Customer.id == customer_id,
+        Customer.uuid == customer_uuid,
         Customer.user_id == current_user.id
     ).first()
 
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
 
-
-    # ✅ check total active debts
+    # 🔥 IMPORTANT: use internal ID here
     total_debt = db.query(
         func.coalesce(func.sum(Debt.amount), 0)
     ).filter(
-        Debt.customer_id == customer_id,
+        Debt.customer_id == customer.id,
         Debt.user_id == current_user.id,
         Debt.is_active == True
     ).scalar()
 
-
-    # ✅ block deletion if any debt exists
     if total_debt > 0:
         raise HTTPException(
             status_code=400,
             detail=f"Cannot delete customer. They still owe KSh {total_debt:.0f}"
         )
 
-
-    # soft delete (your existing logic)
+    # ✅ soft delete
     customer.is_active = False
     db.commit()
 
