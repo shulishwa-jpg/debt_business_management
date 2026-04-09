@@ -77,6 +77,17 @@ def get_dashboard(
         ]
     }
 
+
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session, joinedload
+
+from app.database import get_db
+from app.models import Customer, Debt, Payment, User
+from app.security import get_current_active_user
+
+
+
+
 @router.get("/full-data")
 def get_full_data(
     db: Session = Depends(get_db),
@@ -88,19 +99,19 @@ def get_full_data(
     # =========================
     customers = db.query(Customer).filter(
         Customer.user_id == current_user.id,
-        Customer.is_active == True
+        Customer.is_active == True,
+        Customer.uuid != None
     ).all()
 
-    customer_list = [
-        {
+    customer_list = []
+    for c in customers:
+        customer_list.append({
             "uuid": str(c.uuid),
             "name": c.name,
             "phone": c.phone,
             "address": c.address,
             "created_at": c.created_at
-        }
-        for c in customers
-    ]
+        })
 
     # =========================
     # DEBTS (WITH PAYMENTS)
@@ -110,19 +121,22 @@ def get_full_data(
         joinedload(Debt.customer)
     ).filter(
         Debt.user_id == current_user.id,
-        Customer.user_id == current_user.id,
-        Debt.is_active == True
+        Debt.is_active == True,
+        Debt.uuid != None
     ).all()
 
     debt_list = []
-
     for d in debts:
+        # skip if customer missing or uuid missing
+        if not d.customer or not d.customer.uuid:
+            continue
+
         total_paid = sum(p.amount for p in d.payments)
         remaining = max(d.amount - total_paid, 0)
 
         debt_list.append({
             "uuid": str(d.uuid),
-            "customer_uuid": str(d.customer.uuid),  # 🔥 IMPORTANT
+            "customer_uuid": str(d.customer.uuid),
             "description": d.description,
             "amount": d.amount,
             "remaining": remaining,
@@ -137,20 +151,24 @@ def get_full_data(
     payments = db.query(Payment).options(
         joinedload(Payment.debt)
     ).filter(
-        Payment.user_id == current_user.id
+        Payment.user_id == current_user.id,
+        Payment.uuid != None
     ).all()
 
-    payment_list = [
-        {
+    payment_list = []
+    for p in payments:
+        # skip if debt missing or uuid missing
+        if not p.debt or not p.debt.uuid:
+            continue
+
+        payment_list.append({
             "uuid": str(p.uuid),
-            "debt_uuid": str(p.debt.uuid),  # 🔥 IMPORTANT
+            "debt_uuid": str(p.debt.uuid),
             "amount": p.amount,
             "receipt_number": p.receipt_number,
             "payment_date": p.payment_date,
             "created_at": p.created_at
-        }
-        for p in payments
-    ]
+        })
 
     return {
         "customers": customer_list,
