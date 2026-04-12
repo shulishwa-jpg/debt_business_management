@@ -45,7 +45,7 @@ def register(data: RegisterRequest, db: Session = Depends(get_db)):
         user_id=user.id,
         plan_name="free_trial",
         start_date=datetime.utcnow(),
-        end_date=datetime.utcnow() + timedelta(days=3),
+        end_date=datetime.utcnow() + timedelta(days=7),
         status="active",
     )
 
