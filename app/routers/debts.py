@@ -218,7 +218,8 @@ def delete_debt(
 ):
     debt = db.query(Debt).filter(
         Debt.uuid == debt_uuid,
-        Debt.user_id == current_user.id
+        Debt.user_id == current_user.id,
+        Debt.is_active == True
     ).first()
 
     if not debt:
@@ -226,15 +227,31 @@ def delete_debt(
 
     total_paid = db.query(
         func.coalesce(func.sum(Payment.amount), 0)
-    ).filter(Payment.debt_id == debt.id).scalar()
+    ).filter(
+        Payment.debt_id == debt.id,
+        Payment.user_id == current_user.id
+    ).scalar()
 
-    if debt.amount - total_paid > 0:
-        raise HTTPException(status_code=400, detail="Cannot delete unpaid debt")
+    remaining = debt.amount - total_paid
 
-    debt.is_active = False
+    if remaining != 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Debt must be fully paid before deletion"
+        )
+
+    # 🔥 delete payments first
+    db.query(Payment).filter(
+        Payment.debt_id == debt.id,
+        Payment.user_id == current_user.id
+    ).delete()
+
+    # 🔥 delete debt permanently
+    db.delete(debt)
+
     db.commit()
 
-    return {"message": "Deleted"}
+    return {"message": "Debt and payments deleted permanently"}
 
 
 # ======================================================
