@@ -18,6 +18,7 @@ from app.security import get_current_active_user
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 
 
+
 @router.get("/")
 def get_dashboard(
     db: Session = Depends(get_db),
@@ -25,43 +26,97 @@ def get_dashboard(
 ):
     business_name = current_user.business_name
 
-    # ✅ TOTAL CUSTOMERS (no .all())
+    # =========================
+    # TOTAL CUSTOMERS (light query)
+    # =========================
     total_customers = db.query(func.count(Customer.id)).filter(
         Customer.user_id == current_user.id,
         Customer.is_active == True
     ).scalar()
 
-    # ✅ TOTAL DEBT (remaining)
+    # =========================
+    # TOTAL DEBT (safe)
+    # =========================
+    payments_subq = db.query(
+        Payment.debt_id,
+        func.coalesce(func.sum(Payment.amount), 0).label("paid")
+    ).group_by(Payment.debt_id).subquery()
+
     total_debt = db.query(
-        func.coalesce(func.sum(Debt.amount), 0)
-        - func.coalesce(func.sum(Payment.amount), 0)
+        func.coalesce(
+            func.sum(Debt.amount - func.coalesce(payments_subq.c.paid, 0)),
+            0
+        )
     ).outerjoin(
-        Payment, Payment.debt_id == Debt.id
+        payments_subq, payments_subq.c.debt_id == Debt.id
     ).filter(
         Debt.user_id == current_user.id,
         Debt.is_active == True
     ).scalar()
 
-    # ✅ OVERDUE DEBT
+    # =========================
+    # OVERDUE DEBT
+    # =========================
     today = datetime.utcnow()
 
     total_overdue_debt = db.query(
-        func.coalesce(func.sum(Debt.amount), 0)
-        - func.coalesce(func.sum(Payment.amount), 0)
+        func.coalesce(
+            func.sum(Debt.amount - func.coalesce(payments_subq.c.paid, 0)),
+            0
+        )
     ).outerjoin(
-        Payment, Payment.debt_id == Debt.id
+        payments_subq, payments_subq.c.debt_id == Debt.id
     ).filter(
         Debt.user_id == current_user.id,
         Debt.is_active == True,
         Debt.due_date < today
     ).scalar()
 
-    # ✅ RECENT CUSTOMERS (limit for UI)
+    # =========================
+    # STEP 1: GET CUSTOMERS (NO HEAVY JOINS)
+    # =========================
     customers = db.query(Customer).filter(
         Customer.user_id == current_user.id,
         Customer.is_active == True
-    ).order_by(Customer.created_at.desc()).limit(10).all()
+    ).all()
 
+    # =========================
+    # STEP 2: GET DEBTS + PAYMENTS (ONLY ONCE)
+    # =========================
+    debts = db.query(Debt).filter(
+        Debt.user_id == current_user.id,
+        Debt.is_active == True
+    ).all()
+
+    payments = db.query(Payment).all()
+
+    # =========================
+    # STEP 3: BUILD DEBT MAP
+    # =========================
+    payment_map = {}
+    for p in payments:
+        payment_map[p.debt_id] = payment_map.get(p.debt_id, 0) + p.amount
+
+    customer_debt = {}
+
+    for d in debts:
+        paid = payment_map.get(d.id, 0)
+        remaining = d.amount - paid
+
+        customer_debt[d.customer_id] = customer_debt.get(d.customer_id, 0) + remaining
+
+    # =========================
+    # STEP 4: SORT CUSTOMERS BY DEBT
+    # =========================
+    customers_sorted = sorted(
+        customers,
+        key=lambda c: customer_debt.get(c.id, 0),
+        reverse=True
+    )[:10]
+
+    # =========================
+    # RESPONSE
+    # =========================
     return {
         "business_name": business_name,
         "total_customers": total_customers,
@@ -69,14 +124,13 @@ def get_dashboard(
         "total_overdue_debt": total_overdue_debt or 0,
         "customers": [
             {
-                "uuid": str(customer.uuid),  # ✅ UUID here
-                "name": customer.name,
-                "phone": customer.phone
+                "uuid": str(c.uuid),
+                "name": c.name,
+                "phone": c.phone
             }
-            for customer in customers
+            for c in customers_sorted
         ]
     }
-
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session, joinedload
