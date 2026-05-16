@@ -6,6 +6,10 @@ from sqlalchemy import text
 from app.database import engine
 from app import models
 
+from app import supplier
+
+from app import pos
+
 from app.routers import auth, subscription, customers, debts, dashboard, mpesa
 
 app = FastAPI()
@@ -54,4 +58,6 @@ app.include_router(auth.router)
 app.include_router(subscription.router)
 app.include_router(customers.router)
 app.include_router(debts.router)
+app.include_router(supplier.router)
+app.include_router(pos.router)
 app.include_router(dashboard.router)

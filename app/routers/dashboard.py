@@ -4,15 +4,27 @@ from sqlalchemy import func
 from datetime import datetime
 
 from app.database import get_db
-from app.models import User, Customer, Debt, Payment
+
 from app.security import get_current_active_user
 
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session, joinedload
 
+
+from app.models import (
+    User,
+    Customer,
+    Debt,
+    Payment,
+
+    Supplier,
+    SupplierDebt,
+    SupplierPayment,
+)
+
 from app.database import get_db
-from app.models import Customer, Debt, Payment, User
+
 from app.security import get_current_active_user
 
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
@@ -141,16 +153,15 @@ from app.security import get_current_active_user
 
 
 
-
 @router.get("/full-data")
 def get_full_data(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
 
-    # =========================
+    # =====================================================
     # CUSTOMERS
-    # =========================
+    # =====================================================
     customers = db.query(Customer).filter(
         Customer.user_id == current_user.id,
         Customer.is_active == True,
@@ -158,18 +169,25 @@ def get_full_data(
     ).all()
 
     customer_list = []
+
     for c in customers:
+
         customer_list.append({
+
             "uuid": str(c.uuid),
+
             "name": c.name,
+
             "phone": c.phone,
+
             "address": c.address,
-            "created_at": c.created_at
+
+            "created_at": c.created_at,
         })
 
-    # =========================
-    # DEBTS (WITH PAYMENTS)
-    # =========================
+    # =====================================================
+    # CUSTOMER DEBTS
+    # =====================================================
     debts = db.query(Debt).options(
         joinedload(Debt.payments),
         joinedload(Debt.customer)
@@ -180,28 +198,51 @@ def get_full_data(
     ).all()
 
     debt_list = []
+
     for d in debts:
-        # skip if customer missing or uuid missing
+
+        # skip invalid relations
         if not d.customer or not d.customer.uuid:
             continue
 
-        total_paid = sum(p.amount for p in d.payments)
-        remaining = max(d.amount - total_paid, 0)
+        total_paid = sum(
+            p.amount for p in d.payments
+        )
+
+        remaining = max(
+            d.amount - total_paid,
+            0
+        )
 
         debt_list.append({
+
             "uuid": str(d.uuid),
-            "customer_uuid": str(d.customer.uuid),
-            "description": d.description,
-            "amount": d.amount,
-            "remaining": remaining,
-            "taken_date": d.taken_date,
-            "due_date": d.due_date,
-            "created_at": d.created_at
+
+            "customer_uuid":
+                str(d.customer.uuid),
+
+            "description":
+                d.description,
+
+            "amount":
+                d.amount,
+
+            "remaining":
+                remaining,
+
+            "taken_date":
+                d.taken_date,
+
+            "due_date":
+                d.due_date,
+
+            "created_at":
+                d.created_at,
         })
 
-    # =========================
-    # PAYMENTS
-    # =========================
+    # =====================================================
+    # CUSTOMER PAYMENTS
+    # =====================================================
     payments = db.query(Payment).options(
         joinedload(Payment.debt)
     ).filter(
@@ -210,22 +251,194 @@ def get_full_data(
     ).all()
 
     payment_list = []
+
     for p in payments:
-        # skip if debt missing or uuid missing
+
+        # skip invalid relations
         if not p.debt or not p.debt.uuid:
             continue
 
         payment_list.append({
+
             "uuid": str(p.uuid),
-            "debt_uuid": str(p.debt.uuid),
-            "amount": p.amount,
-            "receipt_number": p.receipt_number,
-            "payment_date": p.payment_date,
-            "created_at": p.created_at
+
+            "debt_uuid":
+                str(p.debt.uuid),
+
+            "amount":
+                p.amount,
+
+            "receipt_number":
+                p.receipt_number,
+
+            "payment_date":
+                p.payment_date,
+
+            "created_at":
+                p.created_at,
         })
 
+    # =====================================================
+    # SUPPLIERS
+    # =====================================================
+    suppliers = db.query(Supplier).filter(
+        Supplier.user_id == current_user.id,
+        Supplier.is_active == True,
+        Supplier.uuid != None
+    ).all()
+
+    supplier_list = []
+
+    for s in suppliers:
+
+        supplier_list.append({
+
+            "uuid": str(s.uuid),
+
+            "business_name":
+                s.business_name,
+
+            "paybill":
+                s.paybill,
+
+            "account_number":
+                s.account_number,
+
+            "phone":
+                s.phone,
+
+            "address":
+                s.address,
+
+            "created_at":
+                s.created_at,
+        })
+
+    # =====================================================
+    # SUPPLIER DEBTS
+    # =====================================================
+    supplier_debts = db.query(
+        SupplierDebt
+    ).options(
+        joinedload(SupplierDebt.payments),
+        joinedload(SupplierDebt.supplier)
+    ).filter(
+        SupplierDebt.user_id == current_user.id,
+        SupplierDebt.is_active == True,
+        SupplierDebt.uuid != None
+    ).all()
+
+    supplier_debt_list = []
+
+    for d in supplier_debts:
+
+        # skip invalid relations
+        if not d.supplier or not d.supplier.uuid:
+            continue
+
+        total_paid = sum(
+            p.amount for p in d.payments
+        )
+
+        remaining = max(
+            d.amount - total_paid,
+            0
+        )
+
+        supplier_debt_list.append({
+
+            "uuid": str(d.uuid),
+
+            "supplier_uuid":
+                str(d.supplier.uuid),
+
+            "item_name":
+                d.item_name,
+
+            "amount":
+                d.amount,
+
+            "remaining":
+                remaining,
+
+            "paid":
+                total_paid,
+
+            "supplied_date":
+                d.supplied_date,
+
+            "due_date":
+                d.due_date,
+
+            "created_at":
+                d.created_at,
+        })
+
+    # =====================================================
+    # SUPPLIER PAYMENTS
+    # =====================================================
+    supplier_payments = db.query(
+        SupplierPayment
+    ).options(
+        joinedload(SupplierPayment.supplier_debt)
+    ).filter(
+        SupplierPayment.user_id == current_user.id,
+        SupplierPayment.uuid != None
+    ).all()
+
+    supplier_payment_list = []
+
+    for p in supplier_payments:
+
+        # skip invalid relations
+        if not p.supplier_debt or not p.supplier_debt.uuid:
+            continue
+
+        supplier_payment_list.append({
+
+            "uuid": str(p.uuid),
+
+            "debt_uuid":
+                str(p.supplier_debt.uuid),
+
+            "amount":
+                p.amount,
+
+            "transaction_code":
+                p.transaction_code,
+
+            "payment_date":
+                p.payment_date,
+
+            "created_at":
+                p.created_at,
+        })
+
+    # =====================================================
+    # RETURN
+    # =====================================================
     return {
+
+        # ==========================================
+        # CUSTOMER SIDE
+        # ==========================================
         "customers": customer_list,
+
         "debts": debt_list,
-        "payments": payment_list
+
+        "payments": payment_list,
+
+        # ==========================================
+        # SUPPLIER SIDE
+        # ==========================================
+        "suppliers": supplier_list,
+
+        "supplier_debts":
+            supplier_debt_list,
+
+        "supplier_payments":
+            supplier_payment_list,
     }
+
+
+

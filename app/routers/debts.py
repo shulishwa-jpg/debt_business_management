@@ -15,10 +15,6 @@ from sqlalchemy.orm import Session, joinedload
 router = APIRouter(tags=["Debts"])
 
 
-# ======================================================
-# GET ALL DEBTS FOR A CUSTOMER
-# GET /customers/{customer_id}/debts
-# ======================================================
 
 
 
@@ -72,10 +68,6 @@ def get_customer_debts(
 
     return results
 
-# ======================================================
-# ADD DEBT TO CUSTOMER
-# POST /customers/{customer_id}/debts
-# ======================================================
 
 @router.post("/customers/{customer_uuid}/debts")
 def add_debt(
@@ -115,12 +107,7 @@ def add_debt(
     }
 
 
-# ======================================================
-# ADD PAYMENT TO DEBT
-# ======================================================
-# ADD PAYMENT
-# POST /debts/{debt_id}/payments
-# ======================================================
+
 
 @router.post("/debts/{debt_uuid}/payments")
 def add_payment(
@@ -174,10 +161,7 @@ def add_payment(
         "remaining_debt": remaining - data.amount
     }
 
-# ======================================================
-# UPDATE DEBT
-# PUT /debts/{debt_id}
-# ======================================================
+
 
 
 
@@ -205,10 +189,6 @@ def update_debt(
     db.commit()
     return {"message": "Debt updated"}
 
-# ======================================================
-# DELETE DEBT (SOFT DELETE)
-# DELETE /debts/{debt_id}
-# ======================================================
 
 @router.delete("/debts/{debt_uuid}")
 def delete_debt(
@@ -240,7 +220,7 @@ def delete_debt(
             detail="Debt must be fully paid before deletion"
         )
 
-    # 🔥 delete payments first
+
     db.query(Payment).filter(
         Payment.debt_id == debt.id,
         Payment.user_id == current_user.id
@@ -254,9 +234,6 @@ def delete_debt(
     return {"message": "Debt and payments deleted permanently"}
 
 
-# ======================================================
-# GET CUSTOMER DETAILS + TOTALS
-# ======================================================
 
 @router.get("/customers/{customer_uuid}")
 def get_customer_details(
